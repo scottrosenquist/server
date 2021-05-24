@@ -1,6 +1,7 @@
 const express = require('express')
 const pg = require('pg')
 const rateLimiter = require('./rate-limiter.js')
+const cors = require('cors')
 
 const app = express()
 // configs come from standard PostgreSQL env vars
@@ -14,6 +15,8 @@ const queryHandler = (req, res, next) => {
           }).catch(next)
   }
 }
+
+app.use(cors());
 
 app.use(rateLimiter)
 
