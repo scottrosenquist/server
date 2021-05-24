@@ -1,5 +1,6 @@
 const express = require('express')
 const pg = require('pg')
+const rateLimiter = require('./rate-limiter.js')
 
 const app = express()
 // configs come from standard PostgreSQL env vars
@@ -7,10 +8,14 @@ const app = express()
 const pool = new pg.Pool()
 
 const queryHandler = (req, res, next) => {
-  pool.query(req.sqlQuery).then((r) => {
-    return res.json(r.rows || [])
-  }).catch(next)
+  if (!res.finished) {
+      pool.query(req.sqlQuery).then((r) => {
+            return res.json(r.rows || [])
+          }).catch(next)
+  }
 }
+
+app.use(rateLimiter)
 
 app.get('/', (req, res) => {
   res.send('Welcome to EQ Works 😎')
