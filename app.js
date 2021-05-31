@@ -11,8 +11,14 @@ const pool = new pg.Pool()
 const queryHandler = (req, res, next) => {
   if (!res.finished) {
       pool.query(req.sqlQuery).then((r) => {
-            return res.json(r.rows || [])
-          }).catch(next)
+        if ( r.rows[0].data ) {
+          r.rows.forEach((row, index, array) => {
+            array[index] = {...row, ...row.data}
+            delete array[index].data
+          })
+        }
+        return res.json(r.rows || [])
+      }).catch(next)
   }
 }
 
@@ -20,9 +26,46 @@ app.use(cors());
 
 app.use(rateLimiter)
 
-app.get('/', (req, res) => {
-  res.send('Welcome to EQ Works 😎')
-})
+app.get('/events/monthly', (req, res, next) => {
+  req.sqlQuery = `
+    SELECT TO_CHAR(DATE_TRUNC('month', date),'Mon') AS month,
+           SUM(events) AS events, name
+    FROM public.hourly_events, public.poi
+    WHERE public.hourly_events.poi_id = public.poi.poi_id
+    GROUP BY poi.name, month, hourly_events.date
+    ORDER BY date, poi.name
+    LIMIT 168;
+  `
+  return next()
+}, queryHandler)
+
+app.get('/events/week', (req, res, next) => {
+  req.sqlQuery = `
+    SELECT date, json_object_agg(name, events) AS data
+    FROM (
+      SELECT date, name,sum(events) AS events
+      FROM public.hourly_events, public.poi
+      WHERE public.hourly_events.poi_id = public.poi.poi_id
+      GROUP BY date, poi.name
+      ORDER BY date
+      LIMIT 168
+    ) AS derivedTable
+    GROUP BY derivedTable.date
+    LIMIT 7
+  `
+  return next()
+}, queryHandler)
+
+app.get('/events/poi', (req, res, next) => {
+  req.sqlQuery = `
+    SELECT date, hour, events, name
+    FROM public.hourly_events, public.poi
+    WHERE public.hourly_events.poi_id = public.poi.poi_id
+    ORDER BY date, hour
+    LIMIT 168;
+  `
+  return next()
+}, queryHandler)
 
 app.get('/events/hourly', (req, res, next) => {
   req.sqlQuery = `
@@ -41,6 +84,17 @@ app.get('/events/daily', (req, res, next) => {
     GROUP BY date
     ORDER BY date
     LIMIT 7;
+  `
+  return next()
+}, queryHandler)
+
+app.get('/stats/hourlypoi', (req, res, next) => {
+  req.sqlQuery = `
+    SELECT date + interval '1 hour' * hour AS date, name, impressions, clicks, revenue
+    FROM public.hourly_stats, public.poi
+    WHERE public.hourly_stats.poi_id = public.poi.poi_id
+    ORDER BY date, hour
+    LIMIT 168;
   `
   return next()
 }, queryHandler)
@@ -97,61 +151,3 @@ process.on('unhandledRejection', (reason, p) => {
 })
 
 module.exports = app
-
-//var createError = require('http-errors');
-//const express = require('express')
-//var path = require('path');
-//var cookieParser = require('cookie-parser');
-//var logger = require('morgan');
-//var cors = require('cors');
-//const pg = require('pg')
-//
-//var indexRouter = require('./routes/index');
-//var usersRouter = require('./routes/users');
-//
-//const app = express()
-//
-//const pool = new pg.Pool()
-//
-//const queryHandler = (req, res, next) => {
-//  if (!res.finished) {
-//    pool
-//      .query(req.sqlQuery)
-//      .then(r => {
-//        return res.json(r.rows || []);
-//      })
-//      .catch(next);
-//  }
-//};
-//
-//// view engine setup
-//app.set('views', path.join(__dirname, 'views'));
-//app.set('view engine', 'jade');
-//
-//app.use(cors());
-//app.use(logger('dev'));
-//app.use(express.json());
-//app.use(express.urlencoded({ extended: false }));
-//app.use(cookieParser());
-//app.use(express.static(path.join(__dirname, 'public')));
-//
-//app.use('/', indexRouter);
-//app.use('/users', usersRouter);
-//
-//// catch 404 and forward to error handler
-//app.use(function(req, res, next) {
-//  next(createError(404));
-//});
-//
-//// error handler
-//app.use(function(err, req, res, next) {
-//  // set locals, only providing error in development
-//  res.locals.message = err.message;
-//  res.locals.error = req.app.get('env') === 'development' ? err : {};
-//
-//  // render the error page
-//  res.status(err.status || 500);
-//  res.render('error');
-//});
-//
-//module.exports = app;
